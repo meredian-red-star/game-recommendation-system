@@ -1,4 +1,5 @@
 import argparse
+import re
 from difflib import get_close_matches
 from pathlib import Path
 
@@ -10,9 +11,27 @@ from sklearn.metrics.pairwise import cosine_similarity
 DATA_PATH = Path(__file__).resolve().parents[1] / "data" / "steam_clean.csv"
 
 
+def normalize_name(name):
+    name = name.casefold().replace("™", "").replace("®", "")
+    name = name.replace("'", "").replace("’", "")
+    name = re.sub(r"[\W_]+", " ", name)
+    return " ".join(name.split())
+
+
+def similarity_label(score):
+    if score >= 0.80:
+        return "Very similar"
+    if score >= 0.60:
+        return "Similar"
+    return "Weak similarity"
+
+
 def find_game(games, name, appid=None):
-    normalized_names = games["name"].str.strip().str.casefold()
-    query = name.strip().casefold()
+    normalized_names = games["name"].map(normalize_name)
+    query = normalize_name(name)
+    if not query:
+        print("Please enter a game name.")
+        return None
     matches = games.loc[normalized_names.eq(query)]
 
     if matches.empty:
@@ -60,7 +79,7 @@ def recommend_games(games, vectors, selected_index):
 
 def main():
     parser = argparse.ArgumentParser(description="Find five similar Steam games.")
-    parser.add_argument("name", nargs="?", help="Exact game name (case-insensitive)")
+    parser.add_argument("name", nargs="?", help="Game name (case, trademark symbols and punctuation are ignored)")
     parser.add_argument("--appid", type=int, help="Select an appid when names match multiple games")
     args = parser.parse_args()
 
@@ -76,7 +95,7 @@ def main():
     print(f"\nGames similar to {selected['name']} (appid {selected['appid']}):")
     for rank, game in enumerate(recommendations.itertuples(), start=1):
         print(f"\n{rank}. {game.name} (appid {game.appid})")
-        print(f"   Similarity: {game.similarity_score:.4f}")
+        print(f"   Similarity: {game.similarity_score:.4f} ({similarity_label(game.similarity_score)})")
         print(f"   Genres: {game.genres or 'Unknown'}")
         print(f"   Developer: {game.developer or 'Unknown'}")
         print(f"   Publisher: {game.publisher or 'Unknown'}")
